@@ -36,62 +36,15 @@ module.exports = ({ env }) => ({
 export GOOGLE_TRANSLATE_API_KEY="your-google-translate-api-key"
 ```
 
-4. Install and configure the Strapi i18n plugin to define your target languages.
+4. Configure internationalization in your Strapi project by enabling locales in Settings > Internationalization (Strapi v5 has built-in i18n support).
 
 ## Usage
 
 ### Admin Panel
 
 1. Navigate to the Auto Translate plugin in the Strapi admin panel
-2. Select your target language from the dropdown (based on your i18n configuration)
+2. Select your target language from the dropdown (based on your configured locales)
 3. Use the translation features to translate your content
-
-### API Endpoints
-
-All endpoints require admin authentication and are prefixed with `/api/auto-translate`.
-
-#### Translate a Single Entry
-
-```http
-POST /api/auto-translate/translate-entry
-Content-Type: application/json
-
-{
-  "contentType": "api::article.article",
-  "id": 1,
-  "targetLanguage": "es"
-}
-```
-
-#### Bulk Translate Text
-
-```http
-POST /api/auto-translate/translate-bulk
-Content-Type: application/json
-
-{
-  "texts": ["Hello", "World"],
-  "targetLanguage": "fr",
-  "sourceLanguage": "en"
-}
-```
-
-#### Translate All Published Content
-
-```http
-POST /api/auto-translate/translate-all-published
-Content-Type: application/json
-
-{
-  "targetLanguage": "es"
-}
-```
-
-#### Get Available Locales
-
-```http
-GET /api/auto-translate/locales
-```
 
 ### Programmatic Usage
 
@@ -114,18 +67,17 @@ const translatedEntry = await translationService.translateEntry(
   "fr"
 );
 
-// Get available locales from i18n plugin
+// Get available locales from Strapi's built-in i18n
 const locales = await translationService.getAvailableLocales();
 ```
 
 ## Supported Languages
 
-The plugin supports translation to any languages configured in your Strapi i18n plugin. Configure your target languages in the Strapi admin panel under Settings > Internationalization.
+The plugin supports translation to any languages configured in your Strapi project. Configure your target languages in the Strapi admin panel under Settings > Internationalization (Strapi v5 includes built-in internationalization support).
 
 ## Requirements
 
-- Strapi v5.0.0 or higher
-- Strapi i18n plugin installed and configured
+- Strapi v5.0.0 or higher (includes built-in internationalization)
 - Valid Google Translate API key
 
 ## License

@@ -1,0 +1,30 @@
+{
+  "name": "strapi-plugin-auto-translate",
+  "version": "1.0.0",
+  "description": "Automatically translate Strapi content from English to selected languages using Google Translate API",
+  "strapi": {
+    "name": "auto-translate",
+    "description": "Automatically translate content using Google Translate API",
+    "kind": "plugin",
+    "displayName": "Auto Translate"
+  },
+  "dependencies": {
+    "@google-cloud/translate": "^8.0.2"
+  },
+  "peerDependencies": {
+    "@strapi/strapi": "^5.0.0"
+  },
+  "author": {
+    "name": "Unoroam"
+  },
+  "maintainers": [
+    {
+      "name": "Unoroam"
+    }
+  ],
+  "engines": {
+    "node": ">=18.0.0 <=20.x.x",
+    "npm": ">=6.0.0"
+  },
+  "license": "MIT"
+} 

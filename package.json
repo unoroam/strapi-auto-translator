@@ -1,6 +1,6 @@
 {
-  "name": "strapi-plugin-auto-translate",
-  "version": "1.0.0",
+  "name": "strapi-auto-translator",
+  "version": "0.1.0",
   "description": "Automatically translate Strapi content from English to selected languages using Google Translate API",
   "strapi": {
     "name": "auto-translate",

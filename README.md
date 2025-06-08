@@ -1,4 +1,4 @@
-# Strapi Auto-Translate Plugin
+# Strapi Auto-Translator Plugin
 
 A Strapi v5 plugin that automatically translates content from English to selected languages using the Google Translate API.
 
@@ -9,15 +9,25 @@ A Strapi v5 plugin that automatically translates content from English to selecte
 - Bulk translation capabilities
 - Admin UI for easy configuration and testing
 - RESTful API endpoints for programmatic access
+- Support for fixing localization issues
+- Translate all published content at once
 
 ## Installation
 
-1. The plugin is already installed in your Strapi project at `src/plugins/auto-translate`
-
-2. Install the Google Cloud Translate dependency (if not already installed):
+1. Install the plugin via npm:
 
 ```bash
-npm install @google-cloud/translate
+npm install strapi-auto-translator
+```
+
+2. Add the plugin to your `config/plugins.js` file:
+
+```javascript
+module.exports = ({ env }) => ({
+  "auto-translate": {
+    enabled: true,
+  },
+});
 ```
 
 3. Set up your Google Translate API key as an environment variable:
@@ -26,30 +36,19 @@ npm install @google-cloud/translate
 export GOOGLE_TRANSLATE_API_KEY="your-google-translate-api-key"
 ```
 
-## Configuration
-
-The plugin is configured in `config/plugins.js`:
-
-```javascript
-module.exports = ({ env }) => ({
-  "auto-translate": {
-    enabled: true,
-    resolve: "./src/plugins/auto-translate",
-  },
-});
-```
+4. Install and configure the Strapi i18n plugin to define your target languages.
 
 ## Usage
 
 ### Admin Panel
 
 1. Navigate to the Auto Translate plugin in the Strapi admin panel
-2. Select your target language from the dropdown
-3. Use the provided API endpoints to translate your content
+2. Select your target language from the dropdown (based on your i18n configuration)
+3. Use the translation features to translate your content
 
 ### API Endpoints
 
-All endpoints require admin authentication.
+All endpoints require admin authentication and are prefixed with `/api/auto-translate`.
 
 #### Translate a Single Entry
 
@@ -77,21 +76,24 @@ Content-Type: application/json
 }
 ```
 
-#### Get Available Languages
+#### Translate All Published Content
 
 ```http
-GET /api/auto-translate/languages
+POST /api/auto-translate/translate-all-published
+Content-Type: application/json
+
+{
+  "targetLanguage": "es"
+}
 ```
 
-#### Get Plugin Configuration
+#### Get Available Locales
 
 ```http
-GET /api/auto-translate/config
+GET /api/auto-translate/locales
 ```
 
 ### Programmatic Usage
-
-You can also use the translation service directly in your Strapi code:
 
 ```javascript
 const translationService = strapi
@@ -102,67 +104,29 @@ const translationService = strapi
 const translatedText = await translationService.translateText(
   "Hello World",
   "es", // target language
-  "en", // source language
+  "en" // source language
 );
 
 // Translate an entire entry
 const translatedEntry = await translationService.translateEntry(
   originalEntry,
   "api::article.article",
-  "fr",
+  "fr"
 );
+
+// Get available locales from i18n plugin
+const locales = await translationService.getAvailableLocales();
 ```
 
 ## Supported Languages
 
-The plugin supports translation to the following languages by default:
+The plugin supports translation to any languages configured in your Strapi i18n plugin. Configure your target languages in the Strapi admin panel under Settings > Internationalization.
 
-- Spanish (es)
-- French (fr)
-- German (de)
-- Italian (it)
-- Portuguese (pt)
-- Chinese (zh)
-- Japanese (ja)
-- Korean (ko)
-- Arabic (ar)
-- Russian (ru)
-- Dutch (nl)
-- Polish (pl)
-- Turkish (tr)
-- Hindi (hi)
+## Requirements
 
-## Development
-
-### Plugin Structure
-
-```
-src/plugins/auto-translate/
-├── admin/              # Admin panel UI
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       └── index.js
-├── server/             # Server-side logic
-│   ├── controllers/
-│   ├── services/
-│   └── routes/
-├── package.json
-├── strapi-admin.js
-└── strapi-server.js
-```
-
-### Extending the Plugin
-
-To add more target languages, update the `targetLanguages` array in `strapi-server.js`.
-
-To customize the translation behavior, modify the `translation.js` service.
-
-## Troubleshooting
-
-1. **API Key Not Set**: Make sure the `GOOGLE_TRANSLATE_API_KEY` environment variable is set
-2. **Translation Fails**: Check the Strapi logs for error messages
-3. **Fields Not Translating**: Ensure the fields are of type `string`, `text`, or `richtext`
+- Strapi v5.0.0 or higher
+- Strapi i18n plugin installed and configured
+- Valid Google Translate API key
 
 ## License
 

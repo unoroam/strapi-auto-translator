@@ -166,9 +166,312 @@ module.exports = ({ strapi }) => ({
         if (hasDraftPublish) {
           // Use publicationState to get only published entries
           query.publicationState = "live";
+          // Also add explicit filter for publishedAt field as extra safety
+          query.filters = {
+            publishedAt: {
+              $notNull: true,
+            },
+          };
         }
 
+        strapi.log.info(
+          `Query for ${contentType}: ${JSON.stringify(query, null, 2)}`
+        );
+
         const entries = await strapi.entityService.findMany(contentType, query);
+
+        strapi.log.info(
+          `Raw query result for ${contentType}: ${JSON.stringify(entries, null, 2)}`
+        );
+
+        // If we got no results with publicationState, try alternative approaches
+        if (
+          hasDraftPublish &&
+          (!entries || (Array.isArray(entries) && entries.length === 0))
+        ) {
+          strapi.log.warn(
+            `No results with publicationState for ${contentType}, trying alternative query...`
+          );
+
+          // Try without publicationState but with explicit publishedAt filter
+          const alternativeQuery = {
+            populate: {
+              localizations: {
+                fields: ["id", "locale"],
+              },
+            },
+            fields: ["*"],
+            filters: {
+              publishedAt: {
+                $notNull: true,
+              },
+            },
+          };
+
+          strapi.log.info(
+            `Alternative query for ${contentType}: ${JSON.stringify(alternativeQuery, null, 2)}`
+          );
+
+          const alternativeEntries = await strapi.entityService.findMany(
+            contentType,
+            alternativeQuery
+          );
+
+          strapi.log.info(
+            `Alternative query result for ${contentType}: ${JSON.stringify(alternativeEntries, null, 2)}`
+          );
+
+          if (
+            alternativeEntries &&
+            (Array.isArray(alternativeEntries)
+              ? alternativeEntries.length > 0
+              : alternativeEntries.id)
+          ) {
+            strapi.log.info(
+              `Using alternative query results for ${contentType}`
+            );
+            // Use alternative results
+            const finalEntries = alternativeEntries;
+
+            // Continue with processing...
+            // Handle different response formats
+            let entriesArray = [];
+            if (finalEntries) {
+              if (finalEntries.results && Array.isArray(finalEntries.results)) {
+                // Paginated response format
+                entriesArray = finalEntries.results;
+                strapi.log.info(
+                  `Paginated response: ${entriesArray.length} entries`
+                );
+              } else if (Array.isArray(finalEntries)) {
+                // Direct array response
+                entriesArray = finalEntries;
+              } else if (finalEntries.id) {
+                // Single entry response
+                entriesArray = [finalEntries];
+              } else if (finalEntries.data) {
+                // Wrapped response format
+                if (Array.isArray(finalEntries.data)) {
+                  entriesArray = finalEntries.data;
+                } else if (finalEntries.data.id) {
+                  entriesArray = [finalEntries.data];
+                }
+              }
+            }
+
+            strapi.log.info(
+              `Found ${entriesArray.length} entries in ${contentType} using alternative query`
+            );
+
+            if (entriesArray.length > 0) {
+              // Filter out null/undefined entries and ensure only published entries
+              const validEntries = entriesArray.filter(
+                (entry) => entry && entry.id && entry.publishedAt
+              );
+
+              if (validEntries.length > 0) {
+                strapi.log.info(
+                  `Found ${validEntries.length} valid published entries in ${contentType}`
+                );
+
+                // Log if any entries were filtered out for being unpublished
+                const unpublishedCount =
+                  entriesArray.length - validEntries.length;
+                if (unpublishedCount > 0) {
+                  strapi.log.info(
+                    `Filtered out ${unpublishedCount} unpublished entries from ${contentType}`
+                  );
+                }
+
+                allContent.push({
+                  contentType,
+                  entries: validEntries,
+                });
+              }
+            }
+
+            continue; // Skip the normal processing for this content type
+          }
+        }
+
+        // Final fallback: try to get all entries and filter by publishedAt
+        if (
+          hasDraftPublish &&
+          (!entries || (Array.isArray(entries) && entries.length === 0))
+        ) {
+          strapi.log.warn(
+            `Both queries failed for ${contentType}, trying final fallback (fetch all and filter)...`
+          );
+
+          try {
+            const fallbackQuery = {
+              populate: {
+                localizations: {
+                  fields: ["id", "locale"],
+                },
+              },
+              fields: ["*"],
+              // No filters - get everything
+            };
+
+            strapi.log.info(
+              `Fallback query for ${contentType}: ${JSON.stringify(fallbackQuery, null, 2)}`
+            );
+
+            const fallbackEntries = await strapi.entityService.findMany(
+              contentType,
+              fallbackQuery
+            );
+
+            strapi.log.info(
+              `Fallback query result for ${contentType}: Found ${
+                Array.isArray(fallbackEntries)
+                  ? fallbackEntries.length
+                  : fallbackEntries
+                    ? 1
+                    : 0
+              } total entries`
+            );
+
+            if (fallbackEntries) {
+              // Process fallback results
+              let fallbackArray = [];
+              if (
+                fallbackEntries.results &&
+                Array.isArray(fallbackEntries.results)
+              ) {
+                fallbackArray = fallbackEntries.results;
+              } else if (Array.isArray(fallbackEntries)) {
+                fallbackArray = fallbackEntries;
+              } else if (fallbackEntries.id) {
+                fallbackArray = [fallbackEntries];
+              } else if (fallbackEntries.data) {
+                if (Array.isArray(fallbackEntries.data)) {
+                  fallbackArray = fallbackEntries.data;
+                } else if (fallbackEntries.data.id) {
+                  fallbackArray = [fallbackEntries.data];
+                }
+              }
+
+              strapi.log.info(
+                `Fallback processed ${fallbackArray.length} total entries for ${contentType}`
+              );
+
+              // Log details of each entry for debugging
+              fallbackArray.forEach((entry, index) => {
+                strapi.log.info(
+                  `Entry ${index + 1}: ID=${entry?.id}, publishedAt=${entry?.publishedAt}, published=${entry?.published}, status=${entry?.status}, locale=${entry?.locale}`
+                );
+              });
+
+              // Filter to only published entries
+              const publishedEntries = fallbackArray.filter(
+                (entry) => entry && entry.id && entry.publishedAt
+              );
+
+              strapi.log.info(
+                `Fallback found ${publishedEntries.length} published entries out of ${fallbackArray.length} total for ${contentType}`
+              );
+
+              if (publishedEntries.length > 0) {
+                allContent.push({
+                  contentType,
+                  entries: publishedEntries,
+                });
+                continue; // Skip normal processing
+              } else if (fallbackArray.length > 0) {
+                // Try alternative published field checks
+                strapi.log.info(
+                  `Trying alternative published field checks for ${contentType}...`
+                );
+
+                // Try different ways to identify published content
+                const altPublishedEntries = fallbackArray.filter((entry) => {
+                  if (!entry || !entry.id) return false;
+
+                  // Check various possible published indicators
+                  return (
+                    entry.publishedAt ||
+                    entry.published === true ||
+                    entry.status === "published" ||
+                    entry.publicationState === "live" ||
+                    (entry.publishedAt === null && entry.published !== false) // Some versions might use null for published
+                  );
+                });
+
+                strapi.log.info(
+                  `Alternative published check found ${altPublishedEntries.length} entries for ${contentType}`
+                );
+
+                if (altPublishedEntries.length > 0) {
+                  allContent.push({
+                    contentType,
+                    entries: altPublishedEntries,
+                  });
+                  continue; // Skip normal processing
+                }
+              }
+            } else {
+              // Try one more approach with direct database query
+              strapi.log.warn(
+                `Trying direct database query for ${contentType}...`
+              );
+
+              try {
+                const dbEntries = await strapi.db.query(contentType).findMany({
+                  populate: {
+                    localizations: {
+                      fields: ["id", "locale"],
+                    },
+                  },
+                });
+
+                strapi.log.info(
+                  `Direct DB query found ${dbEntries?.length || 0} entries for ${contentType}`
+                );
+
+                if (dbEntries && dbEntries.length > 0) {
+                  // Log details of each DB entry
+                  dbEntries.forEach((entry, index) => {
+                    strapi.log.info(
+                      `DB Entry ${index + 1}: ID=${entry?.id}, publishedAt=${entry?.publishedAt}, published=${entry?.published}, status=${entry?.status}, locale=${entry?.locale}`
+                    );
+                  });
+
+                  // Filter for published entries
+                  const dbPublishedEntries = dbEntries.filter(
+                    (entry) =>
+                      entry &&
+                      entry.id &&
+                      (entry.publishedAt ||
+                        entry.published === true ||
+                        entry.status === "published")
+                  );
+
+                  strapi.log.info(
+                    `DB query found ${dbPublishedEntries.length} published entries for ${contentType}`
+                  );
+
+                  if (dbPublishedEntries.length > 0) {
+                    allContent.push({
+                      contentType,
+                      entries: dbPublishedEntries,
+                    });
+                    continue; // Skip normal processing
+                  }
+                }
+              } catch (dbError) {
+                strapi.log.error(
+                  `Direct DB query failed for ${contentType}: ${dbError.message}`
+                );
+              }
+            }
+          } catch (fallbackError) {
+            strapi.log.error(
+              `Fallback query failed for ${contentType}: ${fallbackError.message}`
+            );
+          }
+        }
 
         // Handle different response formats
         let entriesArray = [];
@@ -200,15 +503,24 @@ module.exports = ({ strapi }) => ({
         );
 
         if (entriesArray.length > 0) {
-          // Filter out null/undefined entries
+          // Filter out null/undefined entries and ensure only published entries
           const validEntries = entriesArray.filter(
-            (entry) => entry && entry.id
+            (entry) => entry && entry.id && entry.publishedAt
           );
 
           if (validEntries.length > 0) {
             strapi.log.info(
               `Found ${validEntries.length} valid published entries in ${contentType}`
             );
+
+            // Log if any entries were filtered out for being unpublished
+            const unpublishedCount = entriesArray.length - validEntries.length;
+            if (unpublishedCount > 0) {
+              strapi.log.info(
+                `Filtered out ${unpublishedCount} unpublished entries from ${contentType}`
+              );
+            }
+
             allContent.push({
               contentType,
               entries: validEntries,
@@ -254,16 +566,38 @@ module.exports = ({ strapi }) => ({
       // Get all published content
       const allContent = await this.getAllPublishedContent();
 
+      strapi.log.info(
+        `getAllPublishedContent returned ${allContent.length} content collections`
+      );
+
+      // Log details of what was found
+      allContent.forEach((contentCollection, index) => {
+        strapi.log.info(
+          `Collection ${index + 1}: ${contentCollection.contentType} with ${contentCollection.entries.length} entries`
+        );
+        contentCollection.entries.forEach((entry, entryIndex) => {
+          strapi.log.info(
+            `  Entry ${entryIndex + 1}: ID=${entry.id}, locale=${entry.locale}, publishedAt=${entry.publishedAt}, documentId=${entry.documentId}`
+          );
+        });
+      });
+
       if (allContent.length === 0) {
         strapi.log.warn("No published content found to translate");
         return results;
       }
 
       for (const { contentType, entries } of allContent) {
+        strapi.log.info(
+          `🔄 Starting to process ${contentType} with ${entries.length} entries`
+        );
+
         const model = strapi.contentType(contentType);
 
         // Check if the content type has i18n enabled
         const hasI18n = model.pluginOptions?.i18n?.localized === true;
+
+        strapi.log.info(`${contentType} - i18n enabled: ${hasI18n}`);
 
         if (!hasI18n) {
           strapi.log.info(`Skipping ${contentType} - i18n not enabled`);
@@ -276,10 +610,11 @@ module.exports = ({ strapi }) => ({
         );
 
         for (const entry of entries) {
-          try {
-            // Make a copy of the entry to avoid modifying the original
-            const originalEntry = { ...entry };
+          strapi.log.info(
+            `📝 Processing entry ID ${entry.id} from ${contentType}`
+          );
 
+          try {
             // Skip if this entry is already a localization (not the main entry)
             if (entry.locale && entry.locale !== sourceLanguage) {
               strapi.log.info(
@@ -289,41 +624,73 @@ module.exports = ({ strapi }) => ({
               continue;
             }
 
-            // Check if translation already exists for this locale
-            let existingTranslation = false;
+            // Only translate PUBLISHED content - use same logic as alternative published check
+            const isPublished =
+              entry.publishedAt ||
+              entry.published === true ||
+              entry.status === "published" ||
+              entry.publicationState === "live" ||
+              (entry.publishedAt === null && entry.published !== false);
 
-            // First, check if this entry already has localizations
-            if (entry.localizations) {
-              existingTranslation = entry.localizations.some(
-                (loc) =>
-                  loc.locale === targetLanguage ||
-                  (loc.attributes && loc.attributes.locale === targetLanguage)
+            if (!isPublished) {
+              strapi.log.info(
+                `Skipping ${contentType} ID ${entry.id} - not published (publishedAt=${entry.publishedAt}, published=${entry.published}, status=${entry.status})`
               );
-
-              if (existingTranslation) {
-                strapi.log.info(
-                  `Translation already exists for ${contentType} ID ${entry.id} in ${targetLanguage}`
-                );
-                results.skipped++;
-                continue;
-              }
+              results.skipped++;
+              continue;
             }
 
-            // Also check by searching for existing translations
-            const searchResults = await strapi.entityService.findMany(
+            strapi.log.info(
+              `✅ Entry ${entry.id} is published - proceeding with translation`
+            );
+
+            // Check if locale variant already exists for this document
+            if (!entry.documentId) {
+              strapi.log.error(
+                `Entry ${entry.id} is missing documentId - cannot create locale variant`
+              );
+              results.failed++;
+              results.errors.push({
+                contentType,
+                entryId: entry.id,
+                error: "Missing documentId",
+              });
+              continue;
+            }
+
+            // Check if translation already exists for this document and locale
+            const existingVariant = await strapi.entityService.findMany(
               contentType,
               {
                 filters: {
+                  documentId: entry.documentId,
                   locale: targetLanguage,
-                  ...(entry.slug && { slug: entry.slug }),
                 },
                 limit: 1,
               }
             );
 
-            if (searchResults && searchResults.length > 0) {
+            // Handle different response formats
+            let existingArray = [];
+            if (existingVariant) {
+              if (Array.isArray(existingVariant)) {
+                existingArray = existingVariant;
+              } else if (
+                existingVariant.results &&
+                Array.isArray(existingVariant.results)
+              ) {
+                existingArray = existingVariant.results;
+              } else if (
+                existingVariant.data &&
+                Array.isArray(existingVariant.data)
+              ) {
+                existingArray = existingVariant.data;
+              }
+            }
+
+            if (existingArray.length > 0) {
               strapi.log.info(
-                `Translation already exists for ${contentType} ID ${entry.id} in ${targetLanguage}`
+                `Locale variant already exists for ${contentType} documentId ${entry.documentId} in ${targetLanguage} - skipping`
               );
               results.skipped++;
               continue;
@@ -337,98 +704,136 @@ module.exports = ({ strapi }) => ({
               sourceLanguage
             );
 
-            // Remove fields that shouldn't be duplicated
+            // Remove fields that shouldn't be duplicated, but keep documentId
             delete translatedData.id;
-            delete translatedData.documentId; // IMPORTANT: Remove documentId so Strapi generates a new one
             delete translatedData.createdAt;
             delete translatedData.updatedAt;
             delete translatedData.publishedAt;
             delete translatedData.locale;
             delete translatedData.localizations;
 
-            // Create localized version
-            let createData = {
+            // Create locale variant with the same documentId
+            const createData = {
               ...translatedData,
+              documentId: entry.documentId, // Keep the same documentId for locale variant
+              locale: targetLanguage,
             };
 
-            // Only set publishedAt if the original was published
-            if (originalEntry.publishedAt) {
+            // Set publishedAt based on our consistent published logic
+            if (isPublished) {
               createData.publishedAt = new Date();
             }
 
             strapi.log.info(
-              `Creating ${targetLanguage} localization for ${contentType} ID ${entry.id}`
+              `Creating ${targetLanguage} locale variant for ${contentType} documentId ${entry.documentId} (original isPublished: ${isPublished})`
             );
 
             try {
-              // Create the localized entry with locale
-              const createParams = {
-                data: {
-                  ...createData,
+              let newEntry;
+
+              // Try Documents API first (recommended for Strapi v5)
+              const documentsService = strapi.documents(contentType);
+              if (documentsService) {
+                strapi.log.info(`Using Documents API to create locale variant`);
+
+                newEntry = await documentsService.create({
+                  data: createData,
                   locale: targetLanguage,
-                },
-                publicationState: originalEntry.publishedAt
-                  ? "live"
-                  : "preview",
-              };
+                  status: isPublished ? "published" : "draft",
+                });
 
-              const newEntry = await strapi.entityService.create(
-                contentType,
-                createParams
-              );
-
-              if (newEntry && newEntry.id) {
-                strapi.log.info(
-                  `SUCCESS: Created ${targetLanguage} localization for ${contentType} - New ID: ${newEntry.id}`
-                );
-
-                // Link the entries together
-                try {
-                  // Get current localizations of the main entry
-                  const mainEntry = await strapi.entityService.findOne(
-                    contentType,
-                    originalEntry.id,
-                    {
-                      populate: ["localizations"],
-                    }
+                if (newEntry && newEntry.id) {
+                  strapi.log.info(
+                    `SUCCESS: Created ${targetLanguage} locale variant using Documents API - ID: ${newEntry.id}, DocumentID: ${newEntry.documentId}, Locale: ${newEntry.locale}, Status: ${isPublished ? "published" : "draft"}`
                   );
-
-                  const currentLocalizations = (mainEntry.localizations || [])
-                    .map((loc) => loc.id || loc)
-                    .filter((id) => id && id !== originalEntry.id);
-
-                  if (!currentLocalizations.includes(newEntry.id)) {
-                    currentLocalizations.push(newEntry.id);
-
-                    // Update the main entry with localizations
-                    await strapi.db.query(contentType).update({
-                      where: { id: originalEntry.id },
-                      data: {
-                        localizations: currentLocalizations,
-                      },
-                    });
-
-                    // Update the new entry to link back
-                    await strapi.db.query(contentType).update({
-                      where: { id: newEntry.id },
-                      data: {
-                        localizations: [originalEntry.id],
-                      },
-                    });
-                  }
-                } catch (linkError) {
-                  strapi.log.warn(
-                    `Failed to link localizations: ${linkError.message}`
+                } else {
+                  throw new Error(
+                    "Documents API creation failed - no ID returned"
                   );
                 }
-
-                results.success++;
               } else {
-                throw new Error("Entry creation failed - no ID returned");
+                // Fallback to Entity Service
+                strapi.log.info(
+                  `Using Entity Service to create locale variant`
+                );
+
+                const createParams = {
+                  data: createData,
+                  locale: targetLanguage,
+                  publicationState: isPublished ? "live" : "preview",
+                };
+
+                newEntry = await strapi.entityService.create(
+                  contentType,
+                  createParams
+                );
+
+                if (newEntry && newEntry.id) {
+                  strapi.log.info(
+                    `SUCCESS: Created ${targetLanguage} locale variant using Entity Service - ID: ${newEntry.id}, DocumentID: ${newEntry.documentId}, Locale: ${newEntry.locale}, PublicationState: ${isPublished ? "live" : "preview"}`
+                  );
+                } else {
+                  throw new Error(
+                    "Entity Service creation failed - no ID returned"
+                  );
+                }
               }
+
+              // Verify the locale variant was created correctly
+              if (newEntry.documentId !== entry.documentId) {
+                strapi.log.error(
+                  `❌ CRITICAL: Locale variant has wrong documentId! Expected: ${entry.documentId}, Got: ${newEntry.documentId}`
+                );
+              } else if (newEntry.locale !== targetLanguage) {
+                strapi.log.error(
+                  `❌ CRITICAL: Locale variant has wrong locale! Expected: ${targetLanguage}, Got: ${newEntry.locale}`
+                );
+              } else {
+                strapi.log.info(
+                  `✅ Locale variant created successfully with correct documentId and locale`
+                );
+              }
+
+              // Ensure the original entry remains published if it was published
+              if (isPublished && !entry.publishedAt) {
+                strapi.log.info(
+                  `🔧 Ensuring original entry ${entry.id} remains published...`
+                );
+
+                try {
+                  // Try to update the original entry to ensure it stays published
+                  if (documentsService) {
+                    await documentsService.update({
+                      documentId: entry.documentId,
+                      locale: entry.locale || sourceLanguage,
+                      data: {},
+                      status: "published",
+                    });
+                    strapi.log.info(
+                      `✅ Updated original entry ${entry.id} to published status using Documents API`
+                    );
+                  } else {
+                    await strapi.entityService.update(contentType, entry.id, {
+                      data: {
+                        publishedAt: new Date(),
+                      },
+                      publicationState: "live",
+                    });
+                    strapi.log.info(
+                      `✅ Updated original entry ${entry.id} to published status using Entity Service`
+                    );
+                  }
+                } catch (updateError) {
+                  strapi.log.warn(
+                    `⚠️ Could not update original entry publication status: ${updateError.message}`
+                  );
+                }
+              }
+
+              results.success++;
             } catch (createError) {
               strapi.log.error(
-                `Failed to create localization: ${createError.message}`
+                `Failed to create locale variant: ${createError.message}`
               );
               results.failed++;
               results.errors.push({
@@ -550,14 +955,12 @@ module.exports = ({ strapi }) => ({
               strapi.log.error(`Linked entry ${locId} is missing documentId!`);
             }
           }
-        } catch (e) {
+        } catch (error) {
           strapi.log.error(
-            `Error checking linked entry ${locId}: ${e.message}`
+            `Failed to check linked entry ${locId}: ${error.message}`
           );
         }
       }
-
-      strapi.log.info(`Diagnosis complete for ${contentType} ID ${entryId}`);
     } catch (error) {
       strapi.log.error(
         `Failed to diagnose localization issues: ${error.message}`

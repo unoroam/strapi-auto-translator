@@ -4,11 +4,14 @@
  */
 
 const strapiUrl = "http://localhost:1337";
-const adminToken = process.env.ADMIN_TOKEN || "YOUR_ADMIN_TOKEN"; // Replace with your actual admin token
+const adminToken =
+  process.env.ADMIN_TOKEN ||
+  "d1de169b18f2933a3e25d1b5783fb12f2297b1dce66fa9ab4e9274ace43c706ab08bee4cd5e6aa051861449eb12ea1ead55094f73a4a7c831cac96c30cd0fc28050545f38c7f66a14536cee04e6032d3a2270871db14da6fc54dd80d33495cfea6c686ba237ff8b84686b391a33f24f82a4f48aff9c7619bc98bc0f6912e7a4d"; // Replace with your actual admin token
 
 async function fixAllLocalizations() {
   console.log("Starting localization fix process...\n");
 
+  console.log("Admin token:", adminToken);
   // Content types that have i18n enabled based on the logs
   const contentTypesToFix = [
     { type: "api::article.article", ids: [27, 35, 39] },
